@@ -53,8 +53,9 @@ class MainWindowUI(Ui_MainWindow):
 		os.remove(imageName)
 		#text = ''.join(text.split())
 		self.originalTextBrowser.setText(text)
-		#translatedText = gs.translate(text, 'en')
-		#print(translatedText)
+		gs = goslate.Goslate()
+		translatedText = gs.translate(text, 'en')
+		self.translatedTextBrowser.setText(translatedText)
 		cv2.imshow("Output", gray)
 		cv2.waitKey(0)
 
