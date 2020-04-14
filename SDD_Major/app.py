@@ -49,7 +49,7 @@ class MainWindowUI(Ui_MainWindow):
 
 		imageName = "{}.png".format(os.getpid())
 		cv2.imwrite(imageName, gray)
-		text = pytesseract.image_to_string(Image.open(imageName))#, config=('-l jpn'))
+		text = pytesseract.image_to_string(Image.open(imageName), config=('-l eng+jpn'))
 		os.remove(imageName)
 		#text = ''.join(text.split())
 		self.originalTextBrowser.setText(text)
