@@ -2,11 +2,13 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QObject, pyqtSlot
 from mainWindow import Ui_MainWindow
-from model import Model
 from PIL import Image
 from textblob import TextBlob
 import pytesseract, argparse, cv2, os, goslate, sys
 import re
+
+#Imports the model, as the project follows the view/model/controller pattern.
+from model import Model
 
 #UI class
 class MainWindowUI(Ui_MainWindow):
@@ -37,6 +39,7 @@ class MainWindowUI(Ui_MainWindow):
 			self.debugPrint("Invalid file specified!")
 			return
 
+		#Potential for preprocessing images
 		# if args["preprocess"] == "thresh":
 		# 	gray = cv2.threshold(gray, 0, 255,
 		# 		cv2.THRESH_BINARY / cv2.THRESH_OTSU)[1]
@@ -55,7 +58,7 @@ class MainWindowUI(Ui_MainWindow):
 		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l eng'))
 		elif self.model.readLang(text) == 'jp':
 		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l jpn'))
-		 	text = re.sub(" ","",text)
+		 	text = re.sub("\s","",text)
 
 		os.remove(imageName)
 		#text = ''.join(text.split())
