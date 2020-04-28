@@ -1,3 +1,6 @@
+from langdetect import detect
+from langdetect import DetectorFactory
+
 class Model:
 	def __init__(self):
 		self.fileName = None
@@ -18,3 +21,7 @@ class Model:
 
 	def getFileName(self):
 		return self.fileName
+
+	def readLang(self,text):
+		DetectorFactory.seed = 0
+		return detect(text)

@@ -5,12 +5,8 @@ from mainWindow import Ui_MainWindow
 from model import Model
 from PIL import Image
 from textblob import TextBlob
-import pytesseract
-import argparse
-import cv2
-import os
-import goslate
-import sys
+import pytesseract, argparse, cv2, os, goslate, sys
+import re
 
 #UI class
 class MainWindowUI(Ui_MainWindow):
@@ -49,7 +45,18 @@ class MainWindowUI(Ui_MainWindow):
 
 		imageName = "{}.png".format(os.getpid())
 		cv2.imwrite(imageName, gray)
+		
+		#run ocr in both languages
 		text = pytesseract.image_to_string(Image.open(imageName), config=('-l eng+jpn'))
+		
+		#uses a non-deterministic algorithm to determine the primary language, then reruns ocr to suit
+
+		if self.model.readLang(text) == 'en':
+		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l eng'))
+		elif self.model.readLang(text) == 'jp':
+		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l jpn'))
+		 	text = re.sub(" ","",text)
+
 		os.remove(imageName)
 		#text = ''.join(text.split())
 		self.originalTextBrowser.setText(text)
@@ -58,6 +65,7 @@ class MainWindowUI(Ui_MainWindow):
 		self.translatedTextBrowser.setText(translatedText)
 		cv2.imshow("Output", gray)
 		cv2.waitKey(0)
+
 
 	#Use super function to allow inheritance from GUI
 	def setupUi(self, MW):
