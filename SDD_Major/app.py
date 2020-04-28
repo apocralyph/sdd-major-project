@@ -4,8 +4,10 @@ from PyQt5.QtCore import QObject, pyqtSlot
 from mainWindow import Ui_MainWindow
 from PIL import Image
 from textblob import TextBlob
-import pytesseract, argparse, cv2, os, goslate, sys
-import re
+from urllib.error import HTTPError
+from yandex.Translater import Translater
+import pytesseract, argparse, cv2, os, sys
+import re, time
 
 #Imports the model, as the project follows the view/model/controller pattern.
 from model import Model
@@ -16,6 +18,15 @@ class MainWindowUI(Ui_MainWindow):
 	def __init__(self):
 		super().__init__()
 		self.model = Model()
+		self.tr = Translater()
+		self.tr.set_key('trnsl.1.1.20200428T021418Z.e82af9c210092261.19a820af968bd0d56d2ad2996aa315a7e2e17890')
+		self.tr.set_from_lang('ja')
+		self.tr.set_to_lang('en')
+
+	#Use super function to allow inheritance from GUI
+	def setupUi(self, MW):
+		super().setupUi(MW)
+		self.splitter.setSizes([300,0])
 
 	#Function that performs ocr
 	def readImg(self):
@@ -56,24 +67,15 @@ class MainWindowUI(Ui_MainWindow):
 
 		if self.model.readLang(text) == 'en':
 		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l eng'))
-		elif self.model.readLang(text) == 'jp':
+		else:
 		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l jpn'))
-		 	text = re.sub("\s","",text)
+		 	text = re.sub(" ","",text)
 
 		os.remove(imageName)
 		#text = ''.join(text.split())
 		self.originalTextBrowser.setText(text)
-		gs = goslate.Goslate()
-		translatedText = gs.translate(text, 'en')
-		self.translatedTextBrowser.setText(translatedText)
 		cv2.imshow("Output", gray)
 		cv2.waitKey(0)
-
-
-	#Use super function to allow inheritance from GUI
-	def setupUi(self, MW):
-		super().setupUi(MW)
-		self.splitter.setSizes([300,0])
 
 	#Setup a hidden debugging log
 	def debugPrint(self, msg):
@@ -102,6 +104,26 @@ class MainWindowUI(Ui_MainWindow):
 			self.refreshAll()
 			self.debugPrint("Invalid file specified: " + fileName)
 
+	def translateSlot(self):
+		text = self.originalTextBrowser.toPlainText()
+		text.join(text.split())
+		text = re.sub(" ","",text)
+		if self.model.readLang(text) == 'en':
+			self.debugPrint("Text already in English...")
+		else:
+			try:
+				self.tr.set_text(text)
+				tText = self.tr.translate()
+				self.translatedTextBrowser.setText(tText)
+			except HTTPError:
+				time.sleep(2)
+				try:
+					self.tr.set_text(text)
+					tText = self.tr.translate()
+					self.translatedTextBrowser.setText(tText)
+				except HTTPError:
+					self.debugPrint("Failed twice.")
+
 	def browseSlot(self):
 		options = QtWidgets.QFileDialog.Options()
 		options |= QtWidgets.QFileDialog.DontUseNativeDialog
@@ -121,7 +143,6 @@ class MainWindowUI(Ui_MainWindow):
 def main():
 	#Locate trained data for ocr
 	pytesseract.pytesseract.tesseract_cmd = 'Tesseract-OCR\\tesseract.exe'
-	gs = goslate.Goslate()
 	#Load the GUI
 	app = QtWidgets.QApplication(sys.argv)
 	app.setStyle('Fusion')

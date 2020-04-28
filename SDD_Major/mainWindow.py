@@ -90,9 +90,6 @@ class Ui_MainWindow(QObject):
     def translateSlot(self):
         pass
 
-    def 
-
-
 if __name__ == "__main__":
     import sys
     app = QtWidgets.QApplication(sys.argv)
