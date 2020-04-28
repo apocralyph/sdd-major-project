@@ -106,11 +106,12 @@ class MainWindowUI(Ui_MainWindow):
 
 	def translateSlot(self):
 		text = self.originalTextBrowser.toPlainText()
-		text.join(text.split())
-		text = re.sub(" ","",text)
 		if self.model.readLang(text) == 'en':
-			self.debugPrint("Text already in English...")
+			self.debugPrint("Text already in English.")
+			self.translatedTextBrowser.setText(text)
 		else:
+			text.join(text.split())
+			text = re.sub(" ","",text)
 			try:
 				self.tr.set_text(text)
 				tText = self.tr.translate()
