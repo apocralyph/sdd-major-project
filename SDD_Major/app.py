@@ -60,11 +60,15 @@ class MainWindowUI(Ui_MainWindow):
 		
 		#uses a non-deterministic algorithm to determine the primary language, then reruns ocr to suit
 
-		if self.model.readLang(text) == 'en':
-		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l eng'))
+		if self.checkBox.isChecked():
+			text = pytesseract.image_to_string(Image.open(imageName), config=('-l jpn'))
+			text = re.sub(" ","",text)
 		else:
-		 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l jpn'))
-		 	text = re.sub(" ","",text)
+			if self.model.readLang(text) == 'en':
+			 	text = pytesseract.image_to_string(Image.open(imageName), config=('-l eng'))
+			else:
+				text = pytesseract.image_to_string(Image.open(imageName), config=('-l jpn'))
+				text = re.sub(" ","",text)
 
 		os.remove(imageName)
 		#text = ''.join(text.split())
@@ -74,7 +78,7 @@ class MainWindowUI(Ui_MainWindow):
 		ap = argparse.ArgumentParser()
 		ap.add_argument("-east", "--east", type=str,
 			help="path to input EAST text detector", default="frozen_east_text_detection.pb")
-		ap.add_argument("-c", "--min-confidence", type=float, default=0.7,
+		ap.add_argument("-c", "--min-confidence", type=float, default=0.5,
 			help="minimum probability required to inspect a region")
 		ap.add_argument("-w", "--width", type=int, default=320,
 			help="resized image width (should be multiple of 32)")
@@ -169,6 +173,7 @@ class MainWindowUI(Ui_MainWindow):
 			cv2.rectangle(orig, (startX, startY), (endX, endY), (0, 255, 0), 2)
 		
 		cv2.imshow("Text Detection", orig)
+		self.debugPrint("[INFO] detected language " + self.model.readLang(self.originalTextBrowser.toPlainText()))
 		cv2.waitKey(0)
 
 	#Setup a hidden debugging log
