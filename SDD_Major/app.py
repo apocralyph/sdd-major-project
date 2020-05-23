@@ -30,20 +30,9 @@ class MainWindowUI(Ui_MainWindow):
 
 	#Function that performs ocr
 	def readImg(self):
-		try:
-			image = cv2.imread(self.model.getFileName())
-			gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-		except:
-			m = QtWidgets.QMessageBox()
-			m.setText("Invalid file!")
-			m.setIcon(QtWidgets.QMessageBox.Warning)
-			m.setStandardButtons(QtWidgets.QMessageBox.Ok 
-								| QtWidgets.QMessageBox.Cancel)
-			m.setDefaultButton(QtWidgets.QMessageBox.Cancel)
-			ret = m.exec_()
-			self.lineEdit.setText("")
-			self.debugPrint("Invalid file specified!")
-			return
+		image = cv2.imread(self.model.getFileName())
+		
+		gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
 		#Potential for preprocessing images
 		# if args["preprocess"] == "thresh":
@@ -236,8 +225,34 @@ class MainWindowUI(Ui_MainWindow):
 			self.debugPrint("setting file name: " + fileName)
 			self.model.setFileName(fileName)
 			self.refreshAll()
-			self.readImg()
-			self.text_detect()
+			try:
+				self.readImg()
+				try:
+					self.text_detect()
+				except:
+					m = QtWidgets.QMessageBox()
+					m.setText("Invalid file name!\n" + fileName)
+					m.setIcon(QtWidgets.QMessageBox.Warning)
+					m.setStandardButtons(QtWidgets.QMessageBox.Ok 
+										| QtWidgets.QMessageBox.Cancel)
+					m.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+					ret = m.exec_()
+					self.lineEdit.setText("")
+					self.refreshAll()
+					self.debugPrint("Invalid file specified: " + fileName)
+			except:
+				m = QtWidgets.QMessageBox()
+				m.setText("File contains no readable text!\n" + fileName)
+				m.setIcon(QtWidgets.QMessageBox.Warning)
+				m.setStandardButtons(QtWidgets.QMessageBox.Ok 
+									| QtWidgets.QMessageBox.Cancel)
+				m.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+				ret = m.exec_()
+				self.lineEdit.setText("")
+				self.refreshAll()
+				self.debugPrint("File contains no readable text: " + fileName)
+
+			
 
 #Main function, first thing that the program runs
 def main():
