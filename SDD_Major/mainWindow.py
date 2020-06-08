@@ -14,7 +14,7 @@ from PyQt5.QtCore import QObject, pyqtSlot
 class Ui_MainWindow(QObject):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(434, 288)
+        MainWindow.resize(900, 650)
         MainWindow.setMinimumSize(QtCore.QSize(434, 288))
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
@@ -40,7 +40,7 @@ class Ui_MainWindow(QObject):
         self.pushButton = QtWidgets.QPushButton(self.frame)
         self.pushButton.setObjectName("pushButton")
         self.horizontalLayout.addWidget(self.pushButton)
-        self.gridLayout.addLayout(self.horizontalLayout, 0, 0, 1, 4)
+        self.gridLayout.addLayout(self.horizontalLayout, 0, 0, 1, 3)
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.originalTextBrowser = QtWidgets.QTextBrowser(self.frame)
@@ -49,23 +49,20 @@ class Ui_MainWindow(QObject):
         self.translatedTextBrowser = QtWidgets.QTextBrowser(self.frame)
         self.translatedTextBrowser.setObjectName("translatedTextBrowser")
         self.horizontalLayout_2.addWidget(self.translatedTextBrowser)
-        self.gridLayout.addLayout(self.horizontalLayout_2, 1, 0, 1, 4)
+        self.gridLayout.addLayout(self.horizontalLayout_2, 1, 0, 1, 3)
         spacerItem = QtWidgets.QSpacerItem(335, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.gridLayout.addItem(spacerItem, 2, 0, 1, 1)
+        spacerItem1 = QtWidgets.QSpacerItem(334, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.gridLayout.addItem(spacerItem1, 2, 2, 1, 1)
         self.pushButton_2 = QtWidgets.QPushButton(self.frame)
         self.pushButton_2.setObjectName("pushButton_2")
         self.gridLayout.addWidget(self.pushButton_2, 2, 1, 1, 1)
-        self.checkBox = QtWidgets.QCheckBox(self.frame)
-        self.checkBox.setObjectName("checkBox")
-        self.gridLayout.addWidget(self.checkBox, 2, 2, 1, 1)
-        spacerItem1 = QtWidgets.QSpacerItem(334, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
-        self.gridLayout.addItem(spacerItem1, 2, 3, 1, 1)
         self.debugTextBrowser = QtWidgets.QTextBrowser(self.splitter)
         self.debugTextBrowser.setObjectName("debugTextBrowser")
         self.gridLayout_2.addWidget(self.splitter, 0, 0, 1, 1)
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
-        self.menubar.setGeometry(QtCore.QRect(0, 0, 434, 21))
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 900, 21))
         self.menubar.setObjectName("menubar")
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QtWidgets.QStatusBar(MainWindow)
@@ -84,7 +81,6 @@ class Ui_MainWindow(QObject):
         self.label.setText(_translate("MainWindow", "File Name"))
         self.pushButton.setText(_translate("MainWindow", "Browse"))
         self.pushButton_2.setText(_translate("MainWindow", "Translate"))
-        self.checkBox.setText(_translate("MainWindow", "Assume Japanese?"))
 
     def returnPressedSlot(self):
         pass
@@ -94,6 +90,7 @@ class Ui_MainWindow(QObject):
 
     def translateSlot(self):
         pass
+
 
 if __name__ == "__main__":
     import sys
