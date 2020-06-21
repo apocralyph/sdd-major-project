@@ -41,13 +41,7 @@ class MainWindowUI(Ui_MainWindow):
 		image = cv2.imread(self.model.getFileName())
 		
 		gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-		#Potential for preprocessing images
-		# if args["preprocess"] == "thresh":
-		# 	gray = cv2.threshold(gray, 0, 255,
-		# 		cv2.THRESH_BINARY / cv2.THRESH_OTSU)[1]
-		# elif args["preprocess"] == "blur":
-		# 	gray = cv2.medianBlur(gray, 3)
+		self.debugPrint(str(type(gray)))
 
 		imageName = "{}.png".format(os.getpid())
 		cv2.imwrite(imageName, gray)
@@ -59,7 +53,7 @@ class MainWindowUI(Ui_MainWindow):
 		if self.model.readLang(text) == 'en':
 			filename = self.model.getFileName()
 			text = image_to_string(Image.open(filename))
-			text_original = str(text)
+			textOriginal = str(text)
 			# cleanup text
 			rep = { '\n': ' ', '\\': ' ', '\"': '"', '-': ' ', '"': ' " ', 
 			        '"': ' " ', '"': ' " ', ',':' , ', '.':' . ', '!':' ! ', 
@@ -68,49 +62,49 @@ class MainWindowUI(Ui_MainWindow):
 			rep = dict((re.escape(k), v) for k, v in rep.items()) 
 			pattern = re.compile("|".join(rep.keys()))
 			text = pattern.sub(lambda m: rep[re.escape(m.group(0))], text)
-			def get_personslist(text):
-			    personslist=[]
+			def getPersonsList(text):
+			    personsList=[]
 			    for sent in nltk.sent_tokenize(text):
 			        for chunk in nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(sent))):
 			            if isinstance(chunk, nltk.tree.Tree) and chunk.label() == 'PERSON':
-			                personslist.insert(0, (chunk.leaves()[0][0]))
-			    return list(set(personslist))
-			personslist = get_personslist(text)
-			ignorewords = personslist + ["!", ",", ".", "\"", "?", '(', ')', '*', '\'']
+			                personsList.insert(0, (chunk.leaves()[0][0]))
+			    return list(set(personsList))
+			personsList = getPersonsList(text)
+			ignoreWords = personsList + ["!", ",", ".", "\"", "?", '(', ')', '*', '\'']
 			# using enchant.checker.SpellChecker, identify incorrect words
-			d = SpellChecker("en_US")
+			spell = SpellChecker("en_US")
 			words = text.split()
-			incorrectwords = [w for w in words if not d.check(w) and w not in ignorewords]
+			incorrectWords = [w for w in words if not spell.check(w) and w not in ignoreWords]
 			# using enchant.checker.SpellChecker, get suggested replacements
-			suggestedwords = [d.suggest(w) for w in incorrectwords]
+			suggestedWords = [spell.suggest(w) for w in incorrectWords]
 			# replace incorrect words with [MASK]
-			for w in incorrectwords:
+			for w in incorrectWords:
 			    text = text.replace(w, '[MASK]')
-			    text_original = text_original.replace(w, '[MASK]')
+			    textOriginal = textOriginal.replace(w, '[MASK]')
 			    
 			tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-			tokenized_text = tokenizer.tokenize(text)
-			indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
-			MASKIDS = [i for i, e in enumerate(tokenized_text) if e == '[MASK]']
+			tokenizedText = tokenizer.tokenize(text)
+			indexedTokens = tokenizer.convert_tokens_to_ids(tokenizedText)
+			IdMask = [i for i, e in enumerate(tokenizedText) if e == '[MASK]']
 			# Create the segments tensors.
-			segments_ids = [0] * len(tokenized_text)
+			IdSegments = [0] * len(tokenizedText)
 			# Convert inputs to PyTorch tensors
-			tokens_tensor = torch.tensor([indexed_tokens])
-			segments_tensors = torch.tensor([segments_ids])
+			tokensTensor = torch.tensor([indexedTokens])
+			segmentsTensor = torch.tensor([IdSegments])
 			# Load pre-trained model (weights)
 			model = BertForMaskedLM.from_pretrained('bert-base-uncased')
 			model.eval()
 			# Predict all tokens
 			with torch.no_grad():
-			    predictions = model(tokens_tensor, segments_tensors)
+			    predictions = model(tokensTensor, segmentsTensor)
 			#refine prediction by matching with proposals from SpellChecker
-			def predict_word(text_original, predictions, maskids):
+			def predict_word(textOriginal, predictions, maskids):
 			    pred_words=[]
-			    for i in range(len(MASKIDS)):
-			        preds = torch.topk(predictions[0, MASKIDS[i]], k=90) 
+			    for i in range(len(IdMask)):
+			        preds = torch.topk(predictions[0, IdMask[i]], k=90) 
 			        indices = preds.indices.tolist()
 			        list1 = tokenizer.convert_ids_to_tokens(indices)
-			        list2 = suggestedwords[i]
+			        list2 = suggestedWords[i]
 			        simmax=0
 			        predicted_token=''
 			        for word1 in list1:
@@ -119,9 +113,9 @@ class MainWindowUI(Ui_MainWindow):
 			                if s is not None and s > simmax:
 			                    simmax = s
 			                    predicted_token = word1
-			        text_original = text_original.replace('[MASK]', predicted_token, 1)
-			    return text_original
-			text = predict_word(text_original, predictions, MASKIDS)
+			        textOriginal = textOriginal.replace('[MASK]', predicted_token, 1)
+			    return textOriginal
+			text = predict_word(textOriginal, predictions, IdMask)
 		else:
 			text = pytesseract.image_to_string(Image.open(imageName), config=('-l jpn'))
 			text = re.sub(" ","",text)
