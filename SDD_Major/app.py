@@ -16,13 +16,57 @@ import re, time, sys
 import torch
 from pytorch_pretrained_bert import BertTokenizer, BertForMaskedLM
 from enchant.checker import SpellChecker
-from difflib import SequenceMatcher
 
 # Imports the model, as the project follows the view/model/controller pattern.
-from model import Model, get_persons_list, text_replace, replace_incorrect
+from model import Model, get_persons_list, text_replace, replace_incorrect, predict_word
 
 
-# UI class
+# extract the scores (probabilities), followed by the geometrical
+# data used to derive potential bounding box coordinates that
+# surround text
+def probability_score(args, confidences, geometry, numCols, numRows, rects, scores):
+    for y in range(0, numRows):
+        scores_data = scores[0, 0, y]
+        x_data0 = geometry[0, 0, y]
+        x_data1 = geometry[0, 1, y]
+        x_data2 = geometry[0, 2, y]
+        x_data3 = geometry[0, 3, y]
+        angles_data = geometry[0, 4, y]
+
+        # loop over the number of columns
+        for x in range(0, numCols):
+            # if our score does not have sufficient probability, ignore it
+            if scores_data[x] < args["min_confidence"]:
+                continue
+
+            # compute the offset factor as our resulting feature maps will
+            # be 4x smaller than the input image
+            (offsetX, offsetY) = (x * 4.0, y * 4.0)
+
+            # extract the rotation angle for the prediction and then
+            # compute the sin and cosine
+            angle = angles_data[x]
+            cos = np.cos(angle)
+            sin = np.sin(angle)
+
+            # use the geometry volume to derive the width and height of
+            # the bounding box
+            h = x_data0[x] + x_data2[x]
+            w = x_data1[x] + x_data3[x]
+
+            # compute both the starting and ending (x, y)-coordinates for
+            # the text prediction bounding box
+            end_x = int(offsetX + (cos * x_data1[x]) + (sin * x_data2[x]))
+            end_y = int(offsetY - (sin * x_data1[x]) + (cos * x_data2[x]))
+            start_x = int(end_x - w)
+            start_y = int(end_y - h)
+
+            # add the bounding box coordinates and probability score to
+            # our respective lists
+            rects.append((start_x, start_y, end_x, end_y))
+            confidences.append(scores_data[x])
+
+
 class MainWindowUI(Ui_MainWindow):
     # Initialise the model
     def __init__(self):
@@ -84,24 +128,7 @@ class MainWindowUI(Ui_MainWindow):
                 predictions = model(tokens_tensor, segments_tensor)
 
             # refine prediction by matching with proposals from SpellChecker
-            def predict_word(original_text, predicts):
-                for i in range(len(id_mask)):
-                    preds = torch.topk(predicts[0, id_mask[i]], k=90)
-                    indices = preds.indices.tolist()
-                    list1 = tokenizer.convert_ids_to_tokens(indices)
-                    list2 = suggested_words[i]
-                    sim_max = 0
-                    predicted_token = ''
-                    for word1 in list1:
-                        for word2 in list2:
-                            s = SequenceMatcher(None, word1, word2).ratio()
-                            if s is not None and s > sim_max:
-                                sim_max = s
-                                predicted_token = word1
-                    original_text = original_text.replace('[MASK]', predicted_token, 1)
-                return original_text
-
-            text = predict_word(text_original, predictions)
+            text = predict_word(id_mask, tokenizer, suggested_words, text_original, predictions)
         else:
             text = pytesseract.image_to_string(Image.open(image_name), config='-l jpn')
             text = re.sub(" ", "", text)
@@ -111,6 +138,7 @@ class MainWindowUI(Ui_MainWindow):
         self.originalTextBrowser.setText(text)
 
     def text_detect(self):
+        # DO NOT TOUCH, SHOULDN'T DO ANYTHING BUT THE PROGRAM CRASHES WITHOUT
         ap = argparse.ArgumentParser()
         ap.add_argument("-east", "--east", type=str,
                         help="path to input EAST text detector", default="frozen_east_text_detection.pb")
@@ -152,49 +180,7 @@ class MainWindowUI(Ui_MainWindow):
         rects = []
         confidences = []
 
-        for y in range(0, numRows):
-            # extract the scores (probabilities), followed by the geometrical
-            # data used to derive potential bounding box coordinates that
-            # surround text
-            scores_data = scores[0, 0, y]
-            x_data0 = geometry[0, 0, y]
-            x_data1 = geometry[0, 1, y]
-            x_data2 = geometry[0, 2, y]
-            x_data3 = geometry[0, 3, y]
-            angles_data = geometry[0, 4, y]
-
-            # loop over the number of columns
-            for x in range(0, numCols):
-                # if our score does not have sufficient probability, ignore it
-                if scores_data[x] < args["min_confidence"]:
-                    continue
-
-                # compute the offset factor as our resulting feature maps will
-                # be 4x smaller than the input image
-                (offsetX, offsetY) = (x * 4.0, y * 4.0)
-
-                # extract the rotation angle for the prediction and then
-                # compute the sin and cosine
-                angle = angles_data[x]
-                cos = np.cos(angle)
-                sin = np.sin(angle)
-
-                # use the geometry volume to derive the width and height of
-                # the bounding box
-                h = x_data0[x] + x_data2[x]
-                w = x_data1[x] + x_data3[x]
-
-                # compute both the starting and ending (x, y)-coordinates for
-                # the text prediction bounding box
-                end_x = int(offsetX + (cos * x_data1[x]) + (sin * x_data2[x]))
-                end_y = int(offsetY - (sin * x_data1[x]) + (cos * x_data2[x]))
-                start_x = int(end_x - w)
-                start_y = int(end_y - h)
-
-                # add the bounding box coordinates and probability score to
-                # our respective lists
-                rects.append((start_x, start_y, end_x, end_y))
-                confidences.append(scores_data[x])
+        probability_score(args, confidences, geometry, numCols, numRows, rects, scores)
 
         boxes = non_max_suppression(np.array(rects), probs=confidences)
         for (start_x, start_y, end_x, end_y) in boxes:

@@ -1,6 +1,8 @@
 import re
+from difflib import SequenceMatcher
 
 import nltk
+import torch
 from langdetect import detect
 from langdetect import DetectorFactory
 
@@ -55,3 +57,21 @@ def replace_incorrect(incorrect_words, text, text_original):
         text = text.replace(w, '[MASK]')
         text_original = text_original.replace(w, '[MASK]')
     return text, text_original
+
+
+def predict_word(id_mask, tokenizer, suggested_words, original_text, predicts):
+    for i in range(len(id_mask)):
+        preds = torch.topk(predicts[0, id_mask[i]], k=90)
+        indices = preds.indices.tolist()
+        list1 = tokenizer.convert_ids_to_tokens(indices)
+        list2 = suggested_words[i]
+        sim_max = 0
+        predicted_token = ''
+        for word1 in list1:
+            for word2 in list2:
+                s = SequenceMatcher(None, word1, word2).ratio()
+                if s is not None and s > sim_max:
+                    sim_max = s
+                    predicted_token = word1
+        original_text = original_text.replace('[MASK]', predicted_token, 1)
+    return original_text
