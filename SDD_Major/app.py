@@ -2,11 +2,9 @@
 import os
 
 os.environ["PYTORCH_JIT"] = "0"
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import QObject, pyqtSlot
+from PyQt5 import QtWidgets
 from mainWindow import Ui_MainWindow
 from PIL import Image
-from textblob import TextBlob
 from urllib.error import HTTPError
 from translate import Translator
 from imutils.object_detection import non_max_suppression
@@ -17,12 +15,11 @@ from pytesseract import image_to_string
 import re, time, sys
 import torch
 from pytorch_pretrained_bert import BertTokenizer, BertForMaskedLM
-import nltk
 from enchant.checker import SpellChecker
 from difflib import SequenceMatcher
 
 # Imports the model, as the project follows the view/model/controller pattern.
-from model import Model
+from model import Model, get_persons_list, text_replace, replace_incorrect
 
 
 # UI class
@@ -34,7 +31,7 @@ class MainWindowUI(Ui_MainWindow):
         self.tr = Translator(to_lang="en", from_lang="ja")
 
     # Use super function to allow inheritance from GUI
-    def setup_ui(self, mw):
+    def setupUi(self, mw):
         super().setupUi(mw)
         self.splitter.setSizes([300, 0])
 
@@ -57,20 +54,7 @@ class MainWindowUI(Ui_MainWindow):
             text = image_to_string(Image.open(filename))
             text_original = str(text)
             # cleanup text
-            rep = {'\n': ' ', '\\': ' ', '-': ' ', '"': ' " ', ',': ' , ', '.': ' . ', '!': ' ! ',
-                   '?': ' ? ', "n't": " not", "'ll": " will", '*': ' * ',
-                   '(': ' ( ', ')': ' ) ', "s'": "s '"}
-            rep = dict((re.escape(k), v) for k, v in rep.items())
-            pattern = re.compile("|".join(rep.keys()))
-            text = pattern.sub(lambda m: rep[re.escape(m.group(0))], text)
-
-            def get_persons_list(names):
-                person_list = []
-                for sent in nltk.sent_tokenize(names):
-                    for chunk in nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(sent))):
-                        if isinstance(chunk, nltk.tree.Tree) and chunk.label() == 'PERSON':
-                            person_list.insert(0, (chunk.leaves()[0][0]))
-                return list(set(person_list))
+            text = text_replace(text)
 
             persons_list = get_persons_list(text)
             ignore_words = persons_list + ["!", ",", ".", "\"", "?", '(', ')', '*', '\'']
@@ -81,9 +65,7 @@ class MainWindowUI(Ui_MainWindow):
             # using enchant.checker.SpellChecker, get suggested replacements
             suggested_words = [spell.suggest(w) for w in incorrect_words]
             # replace incorrect words with [MASK]
-            for w in incorrect_words:
-                text = text.replace(w, '[MASK]')
-                text_original = text_original.replace(w, '[MASK]')
+            text, text_original = replace_incorrect(incorrect_words, text, text_original)
 
             tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             tokenized_text = tokenizer.tokenize(text)
