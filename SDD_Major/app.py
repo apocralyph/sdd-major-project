@@ -2,27 +2,30 @@
 import os
 
 os.environ["PYTORCH_JIT"] = "0"
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtCore import QObject, pyqtSlot
 from mainWindow import Ui_MainWindow
 from PIL import Image
+from textblob import TextBlob
 from urllib.error import HTTPError
 from translate import Translator
 from imutils.object_detection import non_max_suppression
 import numpy as np
+import argparse
 import pytesseract, cv2
 from pytesseract import image_to_string
-import re
-import time
-import sys
+import re, time, sys
 import torch
 from pytorch_pretrained_bert import BertTokenizer, BertForMaskedLM
+import nltk
 from enchant.checker import SpellChecker
+from difflib import SequenceMatcher
 
 # Imports the model, as the project follows the view/model/controller pattern.
-from model import Model, get_persons_list, bounding_box, mask_text, bounding_coords, predict_word
+from model import Model
 
 
-# UI class, the main program runs in here
+# UI class
 class MainWindowUI(Ui_MainWindow):
     # Initialise the model
     def __init__(self):
@@ -32,7 +35,7 @@ class MainWindowUI(Ui_MainWindow):
 
     # Use super function to allow inheritance from GUI
     def setup_ui(self, mw):
-        super().setup_ui(mw)
+        super().setupUi(mw)
         self.splitter.setSizes([300, 0])
 
     # Function that performs ocr
@@ -40,7 +43,7 @@ class MainWindowUI(Ui_MainWindow):
         image = cv2.imread(self.model.getFileName())
 
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        self.debug_print(str(type(gray)))
+        self.debugPrint(str(type(gray)))
 
         image_name = "{}.png".format(os.getpid())
         cv2.imwrite(image_name, gray)
@@ -53,15 +56,21 @@ class MainWindowUI(Ui_MainWindow):
             filename = self.model.getFileName()
             text = image_to_string(Image.open(filename))
             text_original = str(text)
-            # dictionary of words used to clean up text for easy translation
-            rep = {'\n': ' ', '\\': ' ', '\"': '"', '-': ' ', ',': ' , ', '.': ' . ', '!': ' ! ',
+            # cleanup text
+            rep = {'\n': ' ', '\\': ' ', '-': ' ', '"': ' " ', ',': ' , ', '.': ' . ', '!': ' ! ',
                    '?': ' ? ', "n't": " not", "'ll": " will", '*': ' * ',
                    '(': ' ( ', ')': ' ) ', "s'": "s '"}
             rep = dict((re.escape(k), v) for k, v in rep.items())
             pattern = re.compile("|".join(rep.keys()))
             text = pattern.sub(lambda m: rep[re.escape(m.group(0))], text)
 
-            # make sure people's names don't get counted as incorrect words
+            def get_persons_list(names):
+                person_list = []
+                for sent in nltk.sent_tokenize(names):
+                    for chunk in nltk.ne_chunk(nltk.pos_tag(nltk.word_tokenize(sent))):
+                        if isinstance(chunk, nltk.tree.Tree) and chunk.label() == 'PERSON':
+                            person_list.insert(0, (chunk.leaves()[0][0]))
+                return list(set(person_list))
 
             persons_list = get_persons_list(text)
             ignore_words = persons_list + ["!", ",", ".", "\"", "?", '(', ')', '*', '\'']
@@ -72,7 +81,9 @@ class MainWindowUI(Ui_MainWindow):
             # using enchant.checker.SpellChecker, get suggested replacements
             suggested_words = [spell.suggest(w) for w in incorrect_words]
             # replace incorrect words with [MASK]
-            text, text_original = mask_text(incorrect_words, text, text_original)
+            for w in incorrect_words:
+                text = text.replace(w, '[MASK]')
+                text_original = text_original.replace(w, '[MASK]')
 
             tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             tokenized_text = tokenizer.tokenize(text)
@@ -90,37 +101,62 @@ class MainWindowUI(Ui_MainWindow):
             with torch.no_grad():
                 predictions = model(tokens_tensor, segments_tensor)
 
-            text = predict_word(id_mask, tokenizer, suggested_words, text_original, predictions)
+            # refine prediction by matching with proposals from SpellChecker
+            def predict_word(original_text, predicts):
+                for i in range(len(id_mask)):
+                    preds = torch.topk(predicts[0, id_mask[i]], k=90)
+                    indices = preds.indices.tolist()
+                    list1 = tokenizer.convert_ids_to_tokens(indices)
+                    list2 = suggested_words[i]
+                    sim_max = 0
+                    predicted_token = ''
+                    for word1 in list1:
+                        for word2 in list2:
+                            s = SequenceMatcher(None, word1, word2).ratio()
+                            if s is not None and s > sim_max:
+                                sim_max = s
+                                predicted_token = word1
+                    original_text = original_text.replace('[MASK]', predicted_token, 1)
+                return original_text
+
+            text = predict_word(text_original, predictions)
         else:
             text = pytesseract.image_to_string(Image.open(image_name), config='-l jpn')
             text = re.sub(" ", "", text)
 
         os.remove(image_name)
+        # text = ''.join(text.split())
         self.originalTextBrowser.setText(text)
 
-    # Detects blocks of text in an image to prioritise for OCR. Not very accurate
-    # however it picks up small details that tesseract misses.
-    # tesseract usually picks up on whatever this function misses.
     def text_detect(self):
+        ap = argparse.ArgumentParser()
+        ap.add_argument("-east", "--east", type=str,
+                        help="path to input EAST text detector", default="frozen_east_text_detection.pb")
+        ap.add_argument("-c", "--min-confidence", type=float, default=0.5,
+                        help="minimum probability required to inspect a region")
+        ap.add_argument("-w", "--width", type=int, default=320,
+                        help="resized image width (should be multiple of 32)")
+        ap.add_argument("-e", "--height", type=int, default=320,
+                        help="resized image height (should be multiple of 32)")
+        args = vars(ap.parse_args())
 
         image = cv2.imread(self.model.getFileName())
         orig = image.copy()
         (H, W) = image.shape[:2]
 
-        r_w = W / float(W)
-        r_h = H / float(H)
+        (newW, newH) = (args["width"], args["height"])
+        r_w = W / float(newW)
+        r_h = H / float(newH)
 
-        image = cv2.resize(image, (W, H))
+        image = cv2.resize(image, (newW, newH))
         (H, W) = image.shape[:2]
 
-        # Loads in 'layers' of functions used for text detection and probability calculations
         layer_names = [
             "feature_fusion/Conv_7/Sigmoid",
             "feature_fusion/concat_3"]
 
-        # Loads the EAST text detection system
-        self.debug_print("[INFO] loading EAST text detector...")
-        net = cv2.dnn.readNet("frozen_east_text_detection.pb")
+        self.debugPrint("[INFO] loading EAST text detector...")
+        net = cv2.dnn.readNet(args["east"])
 
         blob = cv2.dnn.blobFromImage(image, 1.0, (W, H),
                                      (123.68, 116.78, 103.94), swapRB=True, crop=False)
@@ -129,41 +165,88 @@ class MainWindowUI(Ui_MainWindow):
         (scores, geometry) = net.forward(layer_names)
         end = time.time()
 
-        # Shows an estimate of how long text detection took
-        self.debug_print("[INFO] text detection took {:.6f} seconds".format(end - start))
+        self.debugPrint("[INFO] text detection took {:.6f} seconds".format(end - start))
         (numRows, numCols) = scores.shape[2:4]
         rects = []
         confidences = []
 
-        bounding_coords(confidences, geometry, numCols, numRows, rects, scores)
+        for y in range(0, numRows):
+            # extract the scores (probabilities), followed by the geometrical
+            # data used to derive potential bounding box coordinates that
+            # surround text
+            scores_data = scores[0, 0, y]
+            x_data0 = geometry[0, 0, y]
+            x_data1 = geometry[0, 1, y]
+            x_data2 = geometry[0, 2, y]
+            x_data3 = geometry[0, 3, y]
+            angles_data = geometry[0, 4, y]
+
+            # loop over the number of columns
+            for x in range(0, numCols):
+                # if our score does not have sufficient probability, ignore it
+                if scores_data[x] < args["min_confidence"]:
+                    continue
+
+                # compute the offset factor as our resulting feature maps will
+                # be 4x smaller than the input image
+                (offsetX, offsetY) = (x * 4.0, y * 4.0)
+
+                # extract the rotation angle for the prediction and then
+                # compute the sin and cosine
+                angle = angles_data[x]
+                cos = np.cos(angle)
+                sin = np.sin(angle)
+
+                # use the geometry volume to derive the width and height of
+                # the bounding box
+                h = x_data0[x] + x_data2[x]
+                w = x_data1[x] + x_data3[x]
+
+                # compute both the starting and ending (x, y)-coordinates for
+                # the text prediction bounding box
+                end_x = int(offsetX + (cos * x_data1[x]) + (sin * x_data2[x]))
+                end_y = int(offsetY - (sin * x_data1[x]) + (cos * x_data2[x]))
+                start_x = int(end_x - w)
+                start_y = int(end_y - h)
+
+                # add the bounding box coordinates and probability score to
+                # our respective lists
+                rects.append((start_x, start_y, end_x, end_y))
+                confidences.append(scores_data[x])
 
         boxes = non_max_suppression(np.array(rects), probs=confidences)
-        bounding_box(boxes, orig, r_h, r_w)
+        for (start_x, start_y, end_x, end_y) in boxes:
+            # scale the bounding box coordinates based on the respective
+            # ratios
+            start_x = int(start_x * r_w)
+            start_y = int(start_y * r_h)
+            end_x = int(end_x * r_w)
+            end_y = int(end_y * r_h)
 
-        # Display the original image with green bounding boxes surrounding 'easy' words to detect
+            # draw the bounding box on the image
+            cv2.rectangle(orig, (start_x, start_y), (end_x, end_y), (0, 255, 0), 2)
+
         cv2.imshow("Text Detection", orig)
-        self.debug_print("[INFO] detected language " + self.model.readLang(self.originalTextBrowser.toPlainText()))
+        self.debugPrint("[INFO] detected language " + self.model.readLang(self.originalTextBrowser.toPlainText()))
         cv2.waitKey(0)
 
     # Setup a hidden debugging log
-    def debug_print(self, msg):
+    def debugPrint(self, msg):
         self.debugTextBrowser.append(msg)
 
     # Basic function to empty the textboxes
-    def refresh_all(self):
+    def refreshAll(self):
         self.lineEdit.setText(self.model.getFileName())
 
     # Function executes when enter is pressed, but only while the file path textbox is focused
     def returnPressedSlot(self):
         file_name = self.lineEdit.text()
-        # Tests whether or not the given file is valid
         if self.model.isValid(file_name):
             self.model.setFileName(self.lineEdit.text())
-            self.refresh_all()
+            self.refreshAll()
             self.read_img()
             self.text_detect()
         else:
-            # Displays a generic error message
             m = QtWidgets.QMessageBox()
             m.setText("Invalid file name!\n" + file_name)
             m.setIcon(QtWidgets.QMessageBox.Warning)
@@ -172,34 +255,29 @@ class MainWindowUI(Ui_MainWindow):
             m.setDefaultButton(QtWidgets.QMessageBox.Cancel)
             ret = m.exec_()
             self.lineEdit.setText("")
-            self.refresh_all()
-            self.debug_print("Invalid file specified: " + file_name)
+            self.refreshAll()
+            self.debugPrint("Invalid file specified: " + file_name)
 
-    # Function triggers when the translate button is pressed
     def translateSlot(self):
         text = self.originalTextBrowser.toPlainText()
-        # Checks whether the text is already in English or not
         if self.model.readLang(text) == 'en':
-            self.debug_print("Text already in English.")
+            self.debugPrint("Text already in English.")
             self.translatedTextBrowser.setText(text)
         else:
             text.join(text.split())
             text = re.sub(" ", "", text)
-            # Attempts to translate twice, just in case of random network drop outs
             try:
-                t_text = self.tr.translate(text)
-                self.translatedTextBrowser.setText(t_text)
+                tText = self.tr.translate(text)
+                self.translatedTextBrowser.setText(tText)
             except HTTPError:
                 time.sleep(2)
                 try:
-                    t_text = self.tr.translate(text)
-                    self.translatedTextBrowser.setText(t_text)
+                    tText = self.tr.translate(text)
+                    self.translatedTextBrowser.setText(tText)
                 except HTTPError:
-                    self.debug_print("Failed twice.")
+                    self.debugPrint("Failed twice.")
 
-    # Function triggers when the browse button is pressed
     def browseSlot(self):
-        # Opens a file select dialog box
         options = QtWidgets.QFileDialog.Options()
         options |= QtWidgets.QFileDialog.DontUseNativeDialog
         file_name, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -208,22 +286,26 @@ class MainWindowUI(Ui_MainWindow):
             "",
             "All Files (*);;Jpeg Files (*.jpg)",
             options=options)
-        # Checks to see whether the file exists and can be read
         if file_name:
-            self.debug_print("setting file name: " + file_name)
+            self.debugPrint("setting file name: " + file_name)
             self.model.setFileName(file_name)
-            self.refresh_all()
-            self.open_img(file_name)
-
-    # Opens the image, and attempts to read it
-    def open_img(self, file_name):
-        try:
-            self.read_img()
-            # If the image can be read, attempts to detect any text in it
+            self.refreshAll()
             try:
-                self.text_detect()
+                self.read_img()
+                try:
+                    self.text_detect()
+                except:
+                    m = QtWidgets.QMessageBox()
+                    m.setText("Invalid file name!\n" + file_name)
+                    m.setIcon(QtWidgets.QMessageBox.Warning)
+                    m.setStandardButtons(QtWidgets.QMessageBox.Ok
+                                         | QtWidgets.QMessageBox.Cancel)
+                    m.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+                    ret = m.exec_()
+                    self.lineEdit.setText("")
+                    self.refreshAll()
+                    self.debugPrint("Invalid file specified: " + file_name)
             except:
-                # File is invalid if there is no readable text, display error message
                 m = QtWidgets.QMessageBox()
                 m.setText("File contains no readable text!\n" + file_name)
                 m.setIcon(QtWidgets.QMessageBox.Warning)
@@ -232,20 +314,8 @@ class MainWindowUI(Ui_MainWindow):
                 m.setDefaultButton(QtWidgets.QMessageBox.Cancel)
                 ret = m.exec_()
                 self.lineEdit.setText("")
-                self.refresh_all()
-                self.debug_print("Invalid file specified: " + file_name)
-        # File is invalid if there is no readable text, display error message
-        except:
-            m = QtWidgets.QMessageBox()
-            m.setText("File contains no readable text: " + file_name)
-            m.setIcon(QtWidgets.QMessageBox.Warning)
-            m.setStandardButtons(QtWidgets.QMessageBox.Ok
-                                 | QtWidgets.QMessageBox.Cancel)
-            m.setDefaultButton(QtWidgets.QMessageBox.Cancel)
-            ret = m.exec_()
-            self.lineEdit.setText("")
-            self.refresh_all()
-            self.debug_print("File contains no readable text: " + file_name)
+                self.refreshAll()
+                self.debugPrint("File contains no readable text: " + file_name)
 
 
 # Main function, first thing that the program runs
