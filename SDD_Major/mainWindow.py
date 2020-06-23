@@ -12,7 +12,7 @@ from PyQt5.QtCore import QObject, pyqtSlot
 
 
 class Ui_MainWindow(QObject):
-    def setupUi(self, MainWindow):
+    def setup_ui(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(900, 650)
         MainWindow.setMinimumSize(QtCore.QSize(434, 288))
@@ -97,6 +97,6 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)
+    ui.setup_ui(MainWindow)
     MainWindow.show()
     sys.exit(app.exec_())
