@@ -1,3 +1,4 @@
+# Handling all imports
 import re
 from difflib import SequenceMatcher
 
@@ -7,10 +8,12 @@ from langdetect import detect
 from langdetect import DetectorFactory
 
 
+# Primary class
 class Model:
     def __init__(self):
         self.fileName = None
 
+    # Is the file valid
     def isValid(self, fileName):
         try:
             file = open(fileName, 'r')
@@ -19,20 +22,24 @@ class Model:
         except IOError:
             return False
 
+    # Sets file name to file name, or nothing if the file doesn't exist
     def setFileName(self, fileName):
         if self.isValid(fileName):
             self.fileName = fileName
         else:
             self.fileName = ""
 
+    # this function is self explanatory
     def getFileName(self):
         return self.fileName
 
+    # random seed for language detection
     def readLang(self, text):
         DetectorFactory.seed = 0
         return detect(text)
 
 
+# list of common people names
 def get_persons_list(names):
     person_list = []
     for sent in nltk.sent_tokenize(names):
@@ -42,6 +49,7 @@ def get_persons_list(names):
     return list(set(person_list))
 
 
+# replace text with this stuff
 def text_replace(text):
     rep = {'\n': ' ', '\\': ' ', '-': ' ', '"': ' " ', ',': ' , ', '.': ' . ', '!': ' ! ',
            '?': ' ? ', "n't": " not", "'ll": " will", '*': ' * ',
@@ -52,6 +60,7 @@ def text_replace(text):
     return text
 
 
+# replace incorrect words with a mask
 def replace_incorrect(incorrect_words, text, text_original):
     for w in incorrect_words:
         text = text.replace(w, '[MASK]')
@@ -59,7 +68,9 @@ def replace_incorrect(incorrect_words, text, text_original):
     return text, text_original
 
 
+# predicts missing words using a defined custom neural network
 def predict_word(id_mask, tokenizer, suggested_words, original_text, predicts):
+    # To understand recursion, see line 73
     for i in range(len(id_mask)):
         preds = torch.topk(predicts[0, id_mask[i]], k=90)
         indices = preds.indices.tolist()
