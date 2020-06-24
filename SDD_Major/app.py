@@ -93,8 +93,8 @@ class MainWindowUI(Ui_MainWindow):
         self.tr = Translator(to_lang="en", from_lang="ja")
 
     # Use super function to allow inheritance from GUI
-    def setupUi(self, mw):
-        super().setupUi(mw)
+    def setup_ui(self, mw):
+        super().setup_ui(mw)
         self.splitter.setSizes([300, 0])
 
     # Function that performs ocr
